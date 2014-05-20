@@ -145,7 +145,6 @@ add_to_level(Tx, Prefix, Level, Key, Hash) ->
   Subspace = fdb_subspace:open(Tx, <<Prefix/binary, Level:8>>),
   %% at least the Key == <<>> must be in level
   {ok, {PrevKey, PrevCount}} = fdb_subspace:previous(Subspace, Key),
-  ?debugFmt("add_to_level: ~p~n", [{PrevKey, PrevCount}]),
   IsSkipped = (Hash band ((1 bsl (Level * ?LEVEL_FAN_POW)) - 1)) /= 0,
   case IsSkipped of
     true  ->
