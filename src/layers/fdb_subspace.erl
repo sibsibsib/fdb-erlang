@@ -86,8 +86,10 @@ previous({ss, Prefix, Handle}, Key) ->
   end.
 
 -spec open(fdb_handle(), fdb_key()) -> subspace_handle().
-open(Handle, Prefix) when not is_binary(Prefix) -> {ss, tuple:pack(Prefix), Handle};
-open(Handle, Prefix)                            -> {ss, Prefix            , Handle}.
+open(Handle, Prefix) when not is_binary(Prefix) -> open(Handle, tuple:pack(Prefix));
+open(Handle={db, _Database}, Prefix)            -> {ss, Prefix, Handle};
+open(Handle={tx, _Database}, Prefix)            -> {ss, Prefix, Handle};
+open(_,_) -> erlang:error(invalid_fdb_handle). 
 
 -spec set(subspace_handle(), fdb_key(), term()) -> ok.
 set({ss,Prefix,H}, K, V) -> fdb_raw:set(H, add_prefix(Prefix, K), term_to_binary(V)).

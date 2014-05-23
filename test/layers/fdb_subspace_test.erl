@@ -25,6 +25,10 @@ basic_test()->
   ?assertEqual( []
               , fdb_subspace:get_range(SpaceB, nil, nil)).
 
+invalid_handle_test() ->
+  ?assertError(invalid_fdb_handle, fdb_subspace:open({ok, foo} ,<<"__test">>)),
+  ?assertError(invalid_fdb_handle, fdb_subspace:open(<<"foo">> ,<<"__test">>)).
+
 range_test() ->
   {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
   range_test_core(DB).
