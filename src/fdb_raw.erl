@@ -177,15 +177,6 @@ bind({tx, Transaction}, Select = #select{}) ->
 next_iterator(Iterator = #iterator{tx = Transaction, iteration = Iteration, select = Select}) ->
   {FstKey, FstIsEq, FstOfs} = fst_gt(Select#select.gt, Select#select.gte),
   {LstKey, LstIsEq, LstOfs} = lst_lt(Select#select.lt, Select#select.lte),
-  io:format("RAW: ~p~n", [[ Transaction
-                         , FstKey, FstIsEq, FstOfs
-                         , LstKey, LstIsEq, LstOfs
-                         , Select#select.limit
-                         , Select#select.target_bytes
-                         , Select#select.streaming_mode
-                         , Iteration
-                         , Select#select.is_snapshot
-                         , Select#select.is_reverse]]),
   maybe_do([
    fun() -> fdb_nif:fdb_transaction_get_range(Transaction,
       FstKey, FstIsEq, Select#select.offset_begin + FstOfs,
