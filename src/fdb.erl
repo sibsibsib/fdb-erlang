@@ -10,6 +10,7 @@
 -export([clear/2, clear_range/3]).
 -export([transact/2]).
 -export([init_and_open/0, init_and_open/1]).
+-export([error_as_atom/1]).
 
 -include("../include/fdb.hrl").
 
@@ -81,6 +82,13 @@ get_range(Handle, Begin, End) ->
 get_range(Handle, Select = #select{}) ->
   EncodedData = fdb_raw:get_range(Handle, encode(Select)),
   [ {tuple:unpack(K), binary_to_term(V)} || {K,V} <- EncodedData ].
+
+%% @doc Map the internal Fdb error code to a readable atom name
+-spec error_as_atom({error, integer()} | integer()) -> atom().
+error_as_atom({error, E}) ->
+  error_as_atom(E);
+error_as_atom(E) when is_integer(E) ->
+  fdb_nif:fdb_get_error(E).
 
 %% @doc sets a key and value
 %% Existing values will be overwritten
