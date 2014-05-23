@@ -1,3 +1,18 @@
+%% Fdb keys can be atmost 10,000 bytes long
+-define(FDB_MAX_KEY_SIZE, 10000).
+
+%% Fdb values can be atmost 100,000 bytes long
+-define(FDB_MAX_VALUE_SIZE, 100000).
+
+%% A fdb transaction can take atmost 5 seconds
+-define(FDB_MAX_TRANSACTION_TIME_MILLIS, 5000).
+
+%% A fdb transaction cannot write more than
+%% 10,000,000 bytes in a transaction.
+%% This means key + value must be less than
+%% this limit
+-define(FDB_MAX_TRANSACTION_SIZE, 10000000).
+
 -record(select, {
    lt = nil, 
    lte = nil, 
