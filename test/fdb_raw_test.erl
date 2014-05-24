@@ -12,12 +12,12 @@ range_test() ->
 invalid_handle_test() ->
   Key = <<"key">>,
   InvalidHandle={ok, foo},
-  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:clear(InvalidHandle, Key)),
-  ?assertException(throw,{fdb_error, invalid_fdb_handle}, fdb_raw:clear_range(InvalidHandle, Key, Key)),
-  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get(InvalidHandle, Key)),
-  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get_range(InvalidHandle, Key)),
-  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get_range(InvalidHandle, Key, Key)),
-  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get_range(InvalidHandle, Key, Key)).
+  ?assertError(invalid_fdb_handle, fdb_raw:clear(InvalidHandle, Key)),
+  ?assertError(invalid_fdb_handle, fdb_raw:clear_range(InvalidHandle, Key, Key)),
+  ?assertError(invalid_fdb_handle, fdb_raw:get(InvalidHandle, Key)),
+  ?assertError(invalid_fdb_handle, fdb_raw:get_range(InvalidHandle, Key)),
+  ?assertError(invalid_fdb_handle, fdb_raw:get_range(InvalidHandle, Key, Key)),
+  ?assertError(invalid_fdb_handle, fdb_raw:get_range(InvalidHandle, Key, Key)).
   
 
 range_single_transaction_test() ->
