@@ -19,21 +19,27 @@
         , transact/2
         ]).
 
--define (FDB_API_VERSION, 21).
-
 -define (FUTURE_TIMEOUT, 5000).
 -include("../include/fdb.hrl").
+-include("fdb_int.hrl").
 
-
-next(Tx, Key) ->
-  Result = get_range(Tx, #select{ gt = Key, limit = 1 }),
+%% @doc Retrieve the key/value pair immediately succeeding the given
+%% key.
+-spec next(fdb_handle(), fdb_key()) -> ({ok,{fdb_key(),term()}} | not_found | {error,nif_not_loaded}).
+%% @end
+next(Handle, Key) ->
+  Result = get_range(Handle, #select{ gt = Key, limit = 1 }),
   case Result of
     [] -> not_found;
     [{K, V}] -> {ok, {K, V}}
   end.
 
-previous(Tx, Key) ->
-  Result = get_range(Tx, #select{ lt = Key, limit = 1, is_reverse = true }),
+%% @doc Retrieve the key/value pair immediately preceeding the given
+%% key.
+-spec previous(fdb_handle(), fdb_key()) -> ({ok,{fdb_key(),term()}} | not_found | {error,nif_not_loaded}).
+%% @end
+previous(Handle, Key) ->
+  Result = get_range(Handle, #select{ lt = Key, limit = 1, is_reverse = true }),
   case Result of
     [] -> not_found;
     [{K, V}] -> {ok, {K, V}}
@@ -143,7 +149,9 @@ get({tx, Tx}, Key) ->
       not_found -> not_found;
       _         -> {ok, Result}
    end
-  end]).
+  end]);
+get(_,_) ->
+  ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 %% @doc Gets a range of key-value tuples where `begin <= X < end`
 -spec get_range(fdb_handle(), fdb_key(),fdb_key()) -> ([term()]|{error,nif_not_loaded}).
@@ -159,7 +167,9 @@ get_range(DB={db,_}, Select = #select{}) ->
 get_range(Tx={tx, _}, Select = #select{}) ->
   Iterator = bind(Tx, Select),
   Next = next_iterator(Iterator),
-  Next#iterator.data.
+  Next#iterator.data;
+get_range(_,_) ->
+  ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 %% @doc Binds a range of data to an iterator; use `fdb:next` to iterate it
 -spec bind(fdb_handle(), #select{}) -> #iterator{}.
@@ -168,8 +178,6 @@ bind(DB={db, _}, Select = #select{}) ->
   transact(DB, fun(Tx) -> bind(Tx, Select) end);
 bind({tx, Transaction}, Select = #select{}) ->
   #iterator{tx = Transaction, select = Select, iteration = Select#select.iteration}.
-
-%% -include_lib("eunit/include/eunit.hrl").
 
 %% @doc Get data of an iterator; returns the iterator or `done` when finished
 -spec next_iterator(#iterator{}) -> (#iterator{}).
@@ -217,7 +225,9 @@ set({db, Database}, Key, Value) ->
   transact({db, Database}, fun (Tx)-> set(Tx, Key, Value) end);
 set({tx, Tx}, Key, Value) ->
   ErrCode = fdb_nif:fdb_transaction_set(Tx, Key, Value),
-  handle_fdb_result(ErrCode).
+  handle_fdb_result(ErrCode);
+set(_,_,_) ->
+  ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 %% @doc Clears a key and it's value
 -spec clear(fdb_handle(), binary()) -> fdb_cmd_result().
@@ -226,7 +236,9 @@ clear({db, Database}, Key) ->
   transact({db, Database}, fun (Tx)-> clear(Tx, Key) end);
 clear({tx, Tx}, Key) ->
   ErrCode = fdb_nif:fdb_transaction_clear(Tx, Key),
-  handle_fdb_result(ErrCode).
+  handle_fdb_result(ErrCode);
+clear(_,_) ->
+  ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 %% @doc Clears all keys where `begin <= X < end`
 -spec clear_range(fdb_handle(), binary(), binary()) -> fdb_cmd_result().
@@ -235,12 +247,16 @@ clear_range({db, Database}, Begin, End) ->
   transact({db, Database}, fun (Tx)-> clear_range(Tx, Begin, End) end);
 clear_range({tx, Tx}, Begin, End) ->
   ErrCode = fdb_nif:fdb_transaction_clear_range(Tx, Begin, End),
-  handle_fdb_result(ErrCode).
+  handle_fdb_result(ErrCode);
+clear_range(_,_,_) ->
+  ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 -spec transact(fdb_database(), fun((fdb_transaction())->term())) -> term().
 transact({db, DbHandle}, DoStuff) ->
   CommitResult = attempt_transaction(DbHandle, DoStuff),
-  handle_transaction_attempt(CommitResult).
+  handle_transaction_attempt(CommitResult);
+transact(_,_) ->
+  ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 attempt_transaction(DbHandle, DoStuff) ->
   ApplySelf = fun() -> attempt_transaction(DbHandle, DoStuff) end,

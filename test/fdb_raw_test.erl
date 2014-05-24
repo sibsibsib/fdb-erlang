@@ -9,6 +9,17 @@ range_test() ->
   {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
   range_test_core(DB).
 
+invalid_handle_test() ->
+  Key = <<"key">>,
+  InvalidHandle={ok, foo},
+  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:clear(InvalidHandle, Key)),
+  ?assertException(throw,{fdb_error, invalid_fdb_handle}, fdb_raw:clear_range(InvalidHandle, Key, Key)),
+  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get(InvalidHandle, Key)),
+  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get_range(InvalidHandle, Key)),
+  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get_range(InvalidHandle, Key, Key)),
+  ?assertException(throw,{fdb_error,invalid_fdb_handle}, fdb_raw:get_range(InvalidHandle, Key, Key)).
+  
+
 range_single_transaction_test() ->
   {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
   fdb:transact(DB, fun(Tx) ->
