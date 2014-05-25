@@ -23,6 +23,12 @@ basic_test()->
               , [  fdb_ranked:get_rank(Ranked, I)
                 || I <- lists:seq(1, 9)
                 ]),
+  ?assertEqual( [  {ok, I}
+                || I <- lists:seq(9, 1, -1)
+                ]
+              , [  fdb_ranked:get_rank(Ranked, I, [is_reverse])
+                || I <- lists:seq(1, 9)
+                ]),
   %% get_size
   ?assertEqual( 9
               , fdb_ranked:get_size(Ranked)),

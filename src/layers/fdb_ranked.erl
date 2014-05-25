@@ -5,6 +5,7 @@
         , get_nth/3
         , get_range/2
         , get_rank/2
+        , get_rank/3
         , get_size/1
         , open/2
         , set/3
@@ -102,9 +103,11 @@ clear({ranked_set, Prefix, Tx = {tx,_}}, Key) ->
                    )
   end.
 
-get_rank({ranked_set, Prefix, DB = {db,_}}, Key) ->
-  fdb_raw:transact(DB, fun(Tx) -> get_rank({ranked_set, Prefix, Tx}, Key) end);
-get_rank({ranked_set, Prefix, Tx = {tx,_}}, Key) ->
+get_rank(Ranked, Key) -> get_rank(Ranked, Key, []).
+
+get_rank({ranked_set, Prefix, DB = {db,_}}, Key,Options) ->
+  fdb_raw:transact(DB, fun(Tx) -> get_rank({ranked_set, Prefix, Tx}, Key, Options) end);
+get_rank(Ranked = {ranked_set, Prefix, Tx = {tx,_}}, Key, Options) ->
   Subspace = fdb_subspace:open(Tx, <<Prefix/binary, 0:8>>),
   case fdb_subspace:get(Subspace, Key) of
     not_found    ->
@@ -112,7 +115,11 @@ get_rank({ranked_set, Prefix, Tx = {tx,_}}, Key) ->
     {ok, _Value} ->
       %% we start at the top level, counting all items starting from 1
       %% first item <<>> is not counted
-      {ok, acc_rank_in_levels(Tx, Prefix, ?MAX_LEVELS, 0, <<>>, Key)}
+      Rank = acc_rank_in_levels(Tx, Prefix, ?MAX_LEVELS, 0, <<>>, Key),
+      case lists:member(is_reverse, Options) of
+        false -> {ok, Rank};
+        true  -> {ok, get_size(Ranked) - Rank + 1}
+      end
   end.
 
 acc_rank_in_levels(Tx, Prefix,     0, Rank, CurrKey, TargetKey) ->
