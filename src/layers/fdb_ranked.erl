@@ -1,6 +1,8 @@
 -module(fdb_ranked).
 -export([ clear/2
         , get/2
+        , get_nth/2
+        , get_nth/3
         , get_range/2
         , get_rank/2
         , get_size/1
@@ -139,8 +141,6 @@ get_size({ranked_set, Prefix, Tx = {tx,_}}) ->
   L = fdb_subspace:get_range(Subspace, nil, nil),
   lists:sum([ V || {_K, V} <- L ]).
 
--include_lib("eunit/include/eunit.hrl").
-
 add_to_level(Tx, Prefix, Level, Key, Hash) ->
   Subspace = fdb_subspace:open(Tx, <<Prefix/binary, Level:8>>),
   %% at least the Key == <<>> must be in level
@@ -167,6 +167,48 @@ remove_from_level(Tx, Prefix, Level, Key, Count, Hash) ->
     false ->
       fdb_subspace:set(Subspace, PrevKey, PrevCount + Count - 1),
       fdb_subspace:clear(Subspace, Key)
+  end.
+
+get_nth(Ranked, N) -> get_nth(Ranked, N, []).
+
+get_nth({ranked_set, Prefix, DB = {db,_}}, N, Options) ->
+  fdb_raw:transact(DB, fun(Tx) ->
+    get_nth({ranked_set, Prefix, Tx}, N, Options)
+  end);
+get_nth(Ranked = {ranked_set, Prefix, Tx = {tx,_}}, N, Options) ->
+  Size = get_size(Ranked),
+  case (N=<0) or (Size<N) of
+    true  -> not_found;
+    false -> case lists:member(is_reverse, Options) of
+      false -> get_nth_from_level(Tx, Prefix, <<>>, nil, N, ?MAX_LEVELS);
+      %% the rank is 1-based, so in list [a], a is 1st from beginning and size - 1 + 1
+      %% in reversed list
+      true  -> get_nth_from_level(Tx, Prefix, <<>>, nil, Size-N+1, ?MAX_LEVELS)
+    end
+  end.
+
+get_nth_from_level(Tx, Prefix, CurrKey, LastKey, N, 0) ->
+  Subspace = fdb_subspace:open(Tx, <<Prefix/binary, 0:8>>),
+  L = fdb_subspace:get_range(Subspace, #select{ gt = CurrKey, lte = LastKey}),
+  %% CurrKey would be rank 0
+  {K,V} = lists:nth(N, L),
+  {ok, K};
+get_nth_from_level(Tx, Prefix, CurrKey, LastKey, N, Level) ->
+  Subspace = fdb_subspace:open(Tx, <<Prefix/binary, Level:8>>),
+  L = fdb_subspace:get_range(Subspace, #select{ gte = CurrKey, lte = LastKey }),
+  go_deeper(Tx, Prefix, Level, N, L).
+
+go_deeper(Tx, Prefix, Level, N, [{K1,_V1}]) ->
+  get_nth_from_level(Tx, Prefix, K1, nil, N, Level - 1);
+%% N is never 0 and K1 is never the key we are looking for
+go_deeper(Tx, Prefix, Level, N, [{K1,V1}, {K2, V2} | Tail]) ->
+  case {N < V1, N=:=V1} of
+    %% go lower level
+    {true , false} -> get_nth_from_level(Tx, Prefix, K1, K2, N, Level - 1);
+    %% no need to go lower level
+    {false, true } -> {ok, K2};
+    %% not there yet, shorten the distance only
+    {false, false} -> go_deeper(Tx, Prefix, Level, N-V1, [{K2, V2} | Tail])
   end.
 
 debug_print(Ranked = {ranked_set, Prefix, Handle}) ->
