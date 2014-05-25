@@ -92,11 +92,11 @@ clear({ranked_set, Prefix, Tx = {tx,_}}, Key) ->
     not_found    ->
       %% if the value was not there, we are done
       ok;
-    {ok, Count} ->
+    {ok, _Value} ->
       fdb_subspace:clear(Subspace, Key),
       Hash = erlang:phash2(Key),
       lists:foreach( fun(Level) ->
-                       remove_from_level(Tx, Prefix, Level, Key, Count, Hash)
+                       remove_from_level(Tx, Prefix, Level, Key, Hash)
                      end
                    , lists:seq(1, ?MAX_LEVELS)
                    )
@@ -156,7 +156,7 @@ add_to_level(Tx, Prefix, Level, Key, Hash) ->
       fdb_subspace:set(Subspace, Key    , Count       )
   end.
 
-remove_from_level(Tx, Prefix, Level, Key, Count, Hash) ->
+remove_from_level(Tx, Prefix, Level, Key, Hash) ->
   Subspace = fdb_subspace:open(Tx, <<Prefix/binary, Level:8>>),
   %% at least the Key == <<>> must be in level
   {ok, {PrevKey, PrevCount}} = fdb_subspace:previous(Subspace, Key),
@@ -165,6 +165,7 @@ remove_from_level(Tx, Prefix, Level, Key, Count, Hash) ->
     true  ->
       fdb_subspace:set(Subspace, PrevKey, PrevCount - 1);
     false ->
+      {ok, Count} = fdb_subspace:get(Subspace, Key),
       fdb_subspace:set(Subspace, PrevKey, PrevCount + Count - 1),
       fdb_subspace:clear(Subspace, Key)
   end.
@@ -191,7 +192,7 @@ get_nth_from_level(Tx, Prefix, CurrKey, LastKey, N, 0) ->
   Subspace = fdb_subspace:open(Tx, <<Prefix/binary, 0:8>>),
   L = fdb_subspace:get_range(Subspace, #select{ gt = CurrKey, lte = LastKey}),
   %% CurrKey would be rank 0
-  {K,V} = lists:nth(N, L),
+  {K,_V} = lists:nth(N, L),
   {ok, K};
 get_nth_from_level(Tx, Prefix, CurrKey, LastKey, N, Level) ->
   Subspace = fdb_subspace:open(Tx, <<Prefix/binary, Level:8>>),
