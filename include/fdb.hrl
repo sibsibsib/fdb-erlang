@@ -22,7 +22,7 @@
    offset_end = 0,
    limit = 0,
    target_bytes = 0,
-   streaming_mode = iterator,
+   streaming_mode = want_all,
    iteration = 1,
    is_snapshot = false,
    is_reverse = false}).

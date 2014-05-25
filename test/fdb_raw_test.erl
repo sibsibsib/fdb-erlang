@@ -85,3 +85,13 @@ range_test_core(Handle) ->
               , fdb_raw:get_range(Handle, <<"__test",4>>, <<"__test",7>>)),
   fdb_raw:clear_range(Handle, <<"__test",0>>, <<"__test",255>>).
 
+big_range_test() ->
+  {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  fdb_raw:clear_range(DB, <<"__test",0>>, <<"__test",255>>),
+  [ok = fdb_raw:set(DB, <<"__test",I>>, <<I>>) || I <- lists:seq(1, 99)],
+  ?assertEqual( [ {<<"__test",I>>, <<I>>} || I <- lists:seq(1, 99)]
+              , fdb_raw:get_range(DB, #select{ gte          = <<"__test",0>>
+                                             , lte          = <<"__test",255>>
+                                             })),
+  fdb_raw:clear_range(DB, <<"__test",0>>, <<"__test",255>>).
+
