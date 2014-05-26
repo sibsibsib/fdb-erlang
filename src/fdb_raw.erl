@@ -23,6 +23,8 @@
 -include("../include/fdb.hrl").
 -include("fdb_int.hrl").
 
+-type fdb_get_option() :: {timeout, integer()}.
+
 %% @doc Retrieve the key/value pair immediately succeeding the given
 %% key.
 -spec next(fdb_handle(), fdb_key()) -> ({ok,{fdb_key(),term()}} | not_found | {error,nif_not_loaded}).
@@ -92,14 +94,22 @@ api_version(Version) ->
 -spec open() -> fdb_database().
 %% @end
 open() ->
-  maybe_do([
-  fun () -> fdb_nif:fdb_setup_network() end,
-  fun () -> fdb_nif:fdb_run_network() end,
-  fun () -> fdb_nif:fdb_create_cluster() end,
-  fun (ClF) -> future_get(ClF, cluster) end,
-  fun (ClHandle) -> fdb_nif:fdb_cluster_create_database(ClHandle) end,
-  fun (DatabaseF) -> future_get(DatabaseF, database) end,
-  fun (DbHandle) -> {ok,{db, DbHandle}} end]).
+  maybe_do(
+    [ fun () -> fdb_nif:fdb_setup_network() end
+    , fun () -> fdb_nif:fdb_run_network() end
+    , fun () -> fdb_nif:fdb_create_cluster() end
+    , fun (ClF) -> future_get(ClF, cluster) end
+    , fun (ClHandle) -> fdb_nif:fdb_cluster_create_database(ClHandle) end
+    , fun (DatabaseF) -> future_get(DatabaseF, database) end
+    , fun (DbHandle) ->
+        %% check, whether database is actually available
+        try
+          get({db, DbHandle}, <<>>, [{timeout,1000}]),
+          {ok, {db, DbHandle}}
+        catch
+          throw:fdb_timeout -> {error, fdb_timeout}
+        end
+      end ]).
 
 %% @doc Initializes the driver and returns a database handle
 -spec init_and_open() -> fdb_database().
@@ -135,22 +145,26 @@ init_and_open_try_5_times(SoFile, N) ->
     end
   end.
 
+get(DB, Key) -> get(DB, Key, []).
+
 %% @doc Gets a value using a key
--spec get(fdb_handle(), fdb_key()) -> {ok, term()} | not_found.
+-spec get(fdb_handle(), fdb_key(), [fdb_get_option()]) -> {ok, term()} | not_found.
 %% @end
-get(DB={db, _Database}, Key) ->
-  transact(DB, fun(Tx) -> get(Tx, Key) end);
-get({tx, Tx}, Key) ->
-  maybe_do([
-  fun()-> fdb_nif:fdb_transaction_get(Tx, Key) end,
-  fun(GetF) -> future_get(GetF, value) end,
-  fun(Result) -> case Result of
-      %% the result from future_get_value nif is either 'not_found' or a binary
-      not_found -> not_found;
-      _         -> {ok, Result}
-   end
-  end]);
-get(_,_) ->
+get(DB={db, _Database}, Key, Options) ->
+  transact(DB, fun(Tx) -> get(Tx, Key, Options) end);
+get({tx, Tx}, Key, Options) ->
+  Timeout = lkup(timeout, Options, ?FUTURE_TIMEOUT),
+  maybe_do(
+    [ fun()-> fdb_nif:fdb_transaction_get(Tx, Key) end
+    , fun(GetF) -> future_get(GetF, value, Timeout) end
+    , fun(Result) ->
+        case Result of
+          %% the result from future_get_value nif is either 'not_found' or a binary
+          not_found -> not_found;
+          _         -> {ok, Result}
+        end
+      end]);
+get(_,_,_) ->
   ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 %% @doc Gets a range of key-value tuples where `begin <= X < end`
@@ -285,10 +299,12 @@ handle_fdb_result(Other) -> Other.
 
 future(F) -> future_get(F, none).
 
-future_get(F, FQuery) ->
+future_get(F, FQuery) -> future_get(F, FQuery, ?FUTURE_TIMEOUT).
+
+future_get(F, FQuery, Timeout) ->
   maybe_do([
     fun() -> {fdb_nif:fdb_future_is_ready(F), F} end,
-    fun(Ready) -> wait_non_blocking(Ready) end,
+    fun(Ready) -> wait_non_blocking(Ready, Timeout) end,
     fun() -> fdb_nif:fdb_future_get_error(F) end,
     fun() -> get_future_property(F, FQuery) end
   ]).
@@ -299,14 +315,22 @@ get_future_property(F,FQuery) ->
   FullQuery = list_to_atom("fdb_future_get_" ++ atom_to_list(FQuery)),
   apply(fdb_nif, FullQuery, [F]).
 
-wait_non_blocking({false,F}) ->
+wait_non_blocking(Ready) -> wait_non_blocking(Ready, ?FUTURE_TIMEOUT).
+
+wait_non_blocking({false,F}, Timeout) ->
   Ref = make_ref(),
   maybe_do([
   fun ()-> fdb_nif:send_on_complete(F,self(),Ref),
     receive
       Ref -> {ok, F}
-      after ?FUTURE_TIMEOUT -> {error, timeout}
+      after Timeout -> throw(fdb_timeout)
     end
   end]);
-wait_non_blocking({true,F}) ->
+wait_non_blocking({true,F}, _Timeout) ->
   {ok, F}.
+
+lkup(K, KVs, Default) ->
+  case lists:keysearch(K, 1, KVs) of
+    {value, {K, V}} -> V;
+    false           -> Default
+  end.
