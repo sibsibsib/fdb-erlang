@@ -10,10 +10,12 @@
         , init/1
         , init_and_open/0
         , init_and_open/1
+        , init_and_open_try_5_times/0
         , init_and_open_try_5_times/1
         , maybe_do/1
         , next/2
         , open/0
+        , open/1
         , previous/2
         , set/3
         , transact/2
@@ -61,12 +63,20 @@ wrap_fdb_result_fun(F) ->
 %% @doc Loads the native FoundationDB library file from a certain location
 -spec init(SoFile::list())-> ok | {error, term()}.
 %% @end
-init(SoFile) -> fdb_nif:init(SoFile).
+init(Options) ->
+  SoFile = case lists:keysearch(so_file, 1, Options) of
+    {value, {so_file, FilePath}} -> FilePath;
+    false                      -> nif_file()
+  end,
+  fdb_nif:init(SoFile).
 
 %% @doc Loads the native FoundationDB library file from  `priv/fdb_nif.so`
 -spec init()-> ok | {error, term()}.
 %% @end
 init() ->
+  init([]).
+
+nif_file() ->
   PrivDir = case code:priv_dir(?MODULE) of
               {error, bad_name} ->
                 EbinDir = filename:dirname(code:which(?MODULE)),
@@ -75,7 +85,8 @@ init() ->
               Path ->
                 Path
             end,
-  init(filename:join(PrivDir,"fdb_nif")).
+  filename:join(PrivDir,"fdb_nif").
+
 
 %% @doc Specify the API version we are using
 %%
@@ -94,10 +105,18 @@ api_version(Version) ->
 -spec open() -> fdb_database().
 %% @end
 open() ->
+  open([]).
+
+open(Options) ->
   maybe_do(
     [ fun () -> fdb_nif:fdb_setup_network() end
     , fun () -> fdb_nif:fdb_run_network() end
-    , fun () -> fdb_nif:fdb_create_cluster() end
+    , fun () ->
+        case lists:keysearch(fdb_cluster_cfg, 1, Options) of
+          {value, {fdb_cluster_cfg, FilePath}} -> fdb_nif:fdb_create_cluster(FilePath);
+          false                            -> fdb_nif:fdb_create_cluster()
+        end
+      end
     , fun (ClF) -> future_get(ClF, cluster) end
     , fun (ClHandle) -> fdb_nif:fdb_cluster_create_database(ClHandle) end
     , fun (DatabaseF) -> future_get(DatabaseF, database) end
@@ -114,34 +133,29 @@ open() ->
 %% @doc Initializes the driver and returns a database handle
 -spec init_and_open() -> fdb_database().
 %% end
-init_and_open() ->
-  init(),
+init_and_open() -> init_and_open([]).
+
+init_and_open(Options) ->
+  init(Options),
   api_version(100),
   maybe_do([
-    fun() -> open() end
+    fun() -> open(Options) end
   ]).
 
-%% @doc Initializes the driver and returns a database handle
--spec init_and_open(SoFile::list()) -> fdb_database().
-%% end
-init_and_open(SoFile) ->
-  init(SoFile),
-  api_version(100),
-  maybe_do([
-    fun() -> open() end
-  ]).
 
-init_and_open_try_5_times(SoFile) ->
-  init_and_open_try_5_times(SoFile, 5).
+init_and_open_try_5_times() -> init_and_open_try_5_times([]).
 
-init_and_open_try_5_times(SoFile, N) ->
-  case init_and_open(SoFile) of
+init_and_open_try_5_times(Options) ->
+  init_and_open_try_5_times(Options, 5).
+
+init_and_open_try_5_times(Options, N) ->
+  case init_and_open(Options) of
     {ok, DB} -> {ok, DB};
     Error    -> case N of
       0 -> Error;
       _ ->
         timer:sleep(100),
-        init_and_open_try_5_times(SoFile, N-1)
+        init_and_open_try_5_times(Options, N-1)
     end
   end.
 

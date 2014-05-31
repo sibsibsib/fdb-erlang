@@ -6,7 +6,7 @@
 -define(SOLIB,"../priv/fdb_nif").
 
 range_test() ->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   range_test_core(DB).
 
 invalid_handle_test() ->
@@ -21,7 +21,7 @@ invalid_handle_test() ->
   
 
 range_single_transaction_test() ->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   fdb:transact(DB, fun(Tx) ->
     range_test_core(Tx)
   end).
@@ -86,7 +86,7 @@ range_test_core(Handle) ->
   fdb_raw:clear_range(Handle, <<"__test",0>>, <<"__test",255>>).
 
 big_range_test() ->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   fdb_raw:clear_range(DB, <<"__test",0>>, <<"__test",255>>),
   [ok = fdb_raw:set(DB, <<"__test",I>>, <<I>>) || I <- lists:seq(1, 99)],
   ?assertEqual( [ {<<"__test",I>>, <<I>>} || I <- lists:seq(1, 99)]
@@ -95,3 +95,8 @@ big_range_test() ->
                                              })),
   fdb_raw:clear_range(DB, <<"__test",0>>, <<"__test",255>>).
 
+cluster_file_test() ->
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([ {so_file    , ?SOLIB}
+                                               , { fdb_cluster_cfg
+                                                 , "/etc/foundationdb/fdb.cluster"
+                                                 }]).

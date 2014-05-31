@@ -6,7 +6,7 @@
 -define(SOLIB,"../priv/fdb_nif").
 
 basic_test()->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   %% clean
   Subspace = fdb_subspace:open(DB,<<"__test">>),
   fdb_subspace:clear_range(Subspace, nil, nil),

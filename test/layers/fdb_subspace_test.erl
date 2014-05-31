@@ -6,7 +6,7 @@
 -define(SOLIB,"../priv/fdb_nif").
 
 basic_test()->
-  {ok,DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  {ok,DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   Space  = fdb_subspace:open(DB,<<"__test">>),
   fdb_subspace:clear_range(Space, nil, nil),
   fdb_subspace:set(Space, "key", "K"),
@@ -30,7 +30,7 @@ invalid_handle_test() ->
   ?assertError(invalid_fdb_handle, fdb_subspace:open(<<"foo">> ,<<"__test">>)).
 
 next_test() ->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   Subspace = fdb_subspace:open(DB, <<"__test">>),
   fdb_subspace:clear_range(Subspace, nil, nil),
   [ok = fdb_subspace:set(Subspace, I, I) || I <- lists:seq(1, 9)],
@@ -50,7 +50,7 @@ next_test() ->
   ok.
 
 range_test() ->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times(?SOLIB),
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   range_test_core(DB).
 
 range_test_core(Handle) ->
