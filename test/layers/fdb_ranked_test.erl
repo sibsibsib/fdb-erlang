@@ -75,3 +75,23 @@ basic_test()->
   fdb_subspace:clear_range(Subspace, nil, nil),
   ok.
 
+big_test_core(Size, GetNthOpts)->
+  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
+  %% clean
+  Subspace = fdb_subspace:open(DB,<<"__test">>),
+  fdb_subspace:clear_range(Subspace, nil, nil),
+  %% init
+  Ranked = fdb_ranked:open(DB,<<"__test">>),
+  [ok = fdb_ranked:set(Ranked, I, I) || I <- lists:seq(1, Size)],
+  Ns = lists:seq(1,Size),
+  %% get_range
+  Expected = [ {ok, N} || N <- Ns ],
+  Actual = [ fdb_ranked:get_nth(Ranked, N, GetNthOpts) || N <- Ns],
+  io:format(user, "Expected:~n~p~nActual:~n~p~n", [Expected, Actual]),
+  ?assertEqual( Expected, Actual).
+
+big_1_test() ->
+  big_test_core(100, [is_reverse]).
+
+big_2_test() ->
+  big_test_core(100, []).
