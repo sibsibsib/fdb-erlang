@@ -75,23 +75,42 @@ basic_test()->
   fdb_subspace:clear_range(Subspace, nil, nil),
   ok.
 
-big_test_core(Size, GetNthOpts)->
+big_test_core(Size, GetNthOpts, GetExpRank)->
   {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
   %% clean
   Subspace = fdb_subspace:open(DB,<<"__test">>),
   fdb_subspace:clear_range(Subspace, nil, nil),
   %% init
   Ranked = fdb_ranked:open(DB,<<"__test">>),
-  [ok = fdb_ranked:set(Ranked, I, I) || I <- lists:seq(1, Size)],
+  [ begin
+      %% io:format(user, "Adding item ~p:~n", [I]),
+      ok = fdb_ranked:set(Ranked, I, I)
+      %% fdb_ranked:debug_print(Ranked)
+    end
+  || I <- lists:seq(1, Size)],
   Ns = lists:seq(1,Size),
   %% get_range
-  Expected = [ {ok, N} || N <- Ns ],
+  Expected = [ {ok, GetExpRank(N)} || N <- Ns ],
   Actual = [ fdb_ranked:get_nth(Ranked, N, GetNthOpts) || N <- Ns],
-  io:format(user, "Expected:~n~p~nActual:~n~p~n", [Expected, Actual]),
+  %% io:format(user, "Expected:~n~p~nActual:~n~p~n", [Expected, Actual]),
   ?assertEqual( Expected, Actual).
 
-big_1_test() ->
-  big_test_core(100, [is_reverse]).
+big_1_test_() ->
+  { timeout
+  , 60
+  , fun() ->
+      big_test_core( 100
+                   , [is_reverse]
+                   , fun(N) -> 100 - N + 1 end)
+    end
+  }.
 
-big_2_test() ->
-  big_test_core(100, []).
+big_2_test_() ->
+  { timeout
+  , 60
+  , fun() ->
+      big_test_core( 100
+                   , []
+                   , fun(N) -> N end)
+    end
+  }.

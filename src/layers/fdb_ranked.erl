@@ -51,10 +51,13 @@ setup_level({ranked_set, Prefix, Tx}, Level) ->
 slow_count(Tx, Prefix, Level, BeginKey, EndKey) ->
   Subspace = fdb_subspace:open(Tx, <<Prefix/binary, Level:8>>),
   %% fdb_subspace does include the prefix key
-  L = fdb_subspace:get_range(Subspace, #select{ gt = BeginKey, lte = EndKey}),
   case Level of
-    0 -> length(L);  %% the <<>> is not stored in level 0
-    _ -> lists:sum([ V || {_K, V} <- L ])
+    0 ->
+      L = fdb_subspace:get_range(Subspace, #select{ gt = BeginKey, lte = EndKey}),
+      length(L);  %% the <<>> is not stored in level 0
+    _ ->
+      L = fdb_subspace:get_range(Subspace, #select{ gte = BeginKey, lt = EndKey}),
+      lists:sum([ V || {_K, V} <- L ])
   end.
 
 get({ranked_set, Prefix, Handle}, Key) ->
@@ -228,7 +231,7 @@ debug_print_key(Ranked, Key) ->
   Term = {Key, lists:append([  key_level(Ranked, Key, Level)
                             || Level <- lists:seq(1, ?MAX_LEVELS)
                             ])},
-  io:format("~p~n", [Term]).
+  io:format(user,"~p~n", [Term]).
 
 key_level({ranked_set, Prefix, Handle}, Key, Level) ->
   Subspace = fdb_subspace:open(Handle, <<Prefix/binary, Level:8>>),
