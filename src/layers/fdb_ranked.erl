@@ -12,6 +12,8 @@
         ]).
 
 -export([debug_print/1]).
+-export([trest/0]).
+-export([verify_db/2]).
 
 %% see https://foundationdb.com/recipes/developer/ranked-sets
 %% or  http://en.wikipedia.org/wiki/Skip_list
@@ -239,3 +241,40 @@ key_level({ranked_set, Prefix, Handle}, Key, Level) ->
     not_found -> [];
     {ok, Count} -> [Count]
   end.
+
+trest() ->
+  {ok, DB} = fdb_raw:init_and_open(),
+  trest(DB, {[], []}).
+
+trest(DB, {InDB0, PastActions}) ->
+  io:format(".",[]),
+  New = random:uniform(10000),
+  Action = case lists:member(New, InDB0) of
+    true -> remove;
+    false -> add
+  end,
+  InDB1 = case Action of
+    add -> [New|InDB0];
+    remove -> InDB0 -- [New]
+  end,
+  InDB2 = lists:sort(InDB1),
+  try
+    run_action(DB, Action, New)
+    %% verify_db(DB, InDB2)
+  catch
+    _:Error ->
+      io:format("Caught error: ~p~n~p~n", [Error,erlang:get_stacktrace()]),
+      io:format("PastActions:~n~pLastAction:~n~p", [PastActions,{Action,New}]),
+      erlang:error(unexpected_error)
+  end,
+  trest(DB, {InDB2, [{Action, New}|PastActions]}).
+
+run_action(DB, remove, New) ->
+  ok = fdb_ranked:clear(fdb_ranked:open(DB, {<<"__test">>}), New);
+run_action(DB, add, New) ->
+  ok = fdb_ranked:set(fdb_ranked:open(DB, {<<"__test">>}), New, New).
+
+verify_db(DB, InDB) ->
+  InDBWithIndex = lists:zip(InDB, lists:seq(1,length(InDB))),
+  [  {ok,Index} = fdb_ranked:get_rank(fdb_ranked:open(DB,{<<"__test">>}), Item)
+  || {Item, Index} <- InDBWithIndex ].
