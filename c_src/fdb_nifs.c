@@ -474,6 +474,7 @@ static ERL_NIF_TERM nif_fdb_future_get_keyvalue_array(ErlNifEnv* env, int argc, 
     enif_future_t *f;
     const FDBKeyValue * out_kv=NULL;
     int out_count = 0;
+    int count = 0;
     fdb_bool_t out_more = 0;
 
     if (  argc!=1
@@ -488,17 +489,21 @@ static ERL_NIF_TERM nif_fdb_future_get_keyvalue_array(ErlNifEnv* env, int argc, 
     }
 
     ERL_NIF_TERM result = enif_make_list(env, 0);
-
-    while (out_count>0)
+    count = out_count;
+    while (count>0)
     {
-      out_count = out_count - 1;
-      const FDBKeyValue *kv = &(out_kv[out_count]);
+      count = count - 1;
+      const FDBKeyValue *kv = &(out_kv[count]);
       ERL_NIF_TERM k = make_binary(env, kv->key, kv->key_length);
       ERL_NIF_TERM v = make_binary(env, kv->value, kv->value_length);
       ERL_NIF_TERM elem = enif_make_tuple2(env, k, v);
       result = enif_make_list_cell(env, elem, result);
     }
-    return mk_result(env,err,result);
+    return mk_result(env,err,enif_make_tuple3( env
+                                             , result
+                                             , enif_make_int(env, out_count)
+                                             , out_more ? atom_true : atom_false
+                                             ));
 }
 
 static ERL_NIF_TERM nif_fdb_future_get_string_array(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])

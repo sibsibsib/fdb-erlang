@@ -27,13 +27,6 @@
    is_snapshot = false,
    is_reverse = false}).
 
--record(iterator, {
-   tx,
-   iteration,
-   data = [],
-   select,
-   out_more = true}).
-
 -type fdb_version() :: pos_integer().
 -type fdb_errorcode() :: pos_integer().
 -type fdb_cmd_result() :: ok | {error, fdb_errorcode()}|{error,nif_not_loaded}.

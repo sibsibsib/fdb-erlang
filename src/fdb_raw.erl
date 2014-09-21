@@ -193,45 +193,78 @@ get_range(Handle, Begin, End) ->
 get_range(DB={db,_}, Select = #select{}) ->
   transact(DB, fun(Tx) -> get_range(Tx, Select) end);
 get_range(Tx={tx, _}, Select = #select{}) ->
-  Iterator = bind(Tx, Select),
-  Next = next_iterator(Iterator),
-  Next#iterator.data;
+  get_range_iteration_all(Tx, [], Select);
 get_range(_,_) ->
   ?THROW_FDB_ERROR(invalid_fdb_handle).
 
-%% @doc Binds a range of data to an iterator; use `fdb:next` to iterate it
--spec bind(fdb_handle(), #select{}) -> #iterator{}.
-%% @end
-bind(DB={db, _}, Select = #select{}) ->
-  transact(DB, fun(Tx) -> bind(Tx, Select) end);
-bind({tx, Transaction}, Select = #select{}) ->
-  #iterator{tx = Transaction, select = Select, iteration = Select#select.iteration}.
+get_range_iteration_all(Tx, Data0, Select0) ->
+  {IterationData, MaybeSelect1} = get_range_iteration(Tx, Select0),
+  Data1 = [IterationData|Data0],
+  case MaybeSelect1 of
+    undefined ->
+      lists:append(lists:reverse(Data1));
+    {ok, Select1} ->
+      get_range_iteration_all(Tx, Data1, Select1)
+  end.
 
-%% @doc Get data of an iterator; returns the iterator or `done` when finished
--spec next_iterator(#iterator{}) -> (#iterator{}).
+%% @doc Run a singe get_range iteration, returns {Data, undefined} when done
+-spec get_range_iteration(Transaction :: term(), #select{}) -> { [binary()]
+                                                               , ({ok, #select{}}
+                                                                 | undefined
+                                                                 )}.
 %% @end
-next_iterator(Iterator = #iterator{tx = Transaction, iteration = Iteration, select = Select}) ->
-  {FstKey, FstIsEq, FstOfs} = fst_gt(Select#select.gt, Select#select.gte),
-  {LstKey, LstIsEq, LstOfs} = lst_lt(Select#select.lt, Select#select.lte),
+get_range_iteration({tx,Tx}, S) ->
+  {FstKey, FstIsEq, FstOfs} = fst_gt(S#select.gt, S#select.gte),
+  {LstKey, LstIsEq, LstOfs} = lst_lt(S#select.lt, S#select.lte),
   maybe_do([
-   fun() -> fdb_nif:fdb_transaction_get_range(Transaction,
-      FstKey, FstIsEq, Select#select.offset_begin + FstOfs,
-      <<LstKey/binary>>, LstIsEq, Select#select.offset_end + LstOfs,
-      Select#select.limit,
-      Select#select.target_bytes,
-      Select#select.streaming_mode,
-      Iteration,
-      Select#select.is_snapshot,
-      Select#select.is_reverse) end,
+   fun() -> fdb_nif:fdb_transaction_get_range(Tx,
+      FstKey, FstIsEq, S#select.offset_begin + FstOfs,
+      <<LstKey/binary>>, LstIsEq, S#select.offset_end + LstOfs,
+      S#select.limit,
+      S#select.target_bytes,
+      S#select.streaming_mode,
+      S#select.iteration,
+      S#select.is_snapshot,
+      S#select.is_reverse) end,
    fun(F) -> {fdb_nif:fdb_future_is_ready(F),F} end,
    fun(Ready) -> wait_non_blocking(Ready) end,
    fun(F) -> future_get(F, keyvalue_array) end,
-   fun(EncodedData) ->
-     Iterator#iterator{
-        data = EncodedData,
-        iteration = Iteration + 1,
-        out_more = false}
+   fun({EncodedData, OutCount, OutMore}) ->
+     case OutCount == 0 of
+       %% we got nothing, this is the end
+       true  ->
+         {[], undefined};
+       false ->
+         {LastKey, _} = lists:last(EncodedData),
+         case { OutCount == S#select.limit
+              , S#select.limit /= 0
+              , OutMore
+              } of
+           %% we got enough, we counted them out
+           {true , true , _    } ->
+             {EncodedData, undefined};
+           %% we got something, but not enough
+           {false, true , _    } ->
+             S1 = limit_select(S, LastKey),
+             {EncodedData, {ok, S1#select{ limit     = S1#select.limit - OutCount
+                                         , iteration = S1#select.iteration + 1
+                                         }}};
+           %% we got something and FDB says it has some more
+           {false, false, true } ->
+             S1 = limit_select(S, LastKey),
+             {EncodedData, {ok, S1#select{ iteration = S1#select.iteration + 1 }}};
+           %% we got something and FDB says it is enough
+           {false, false, false} ->
+             {EncodedData, undefined}
+         end
+      end
     end]).
+
+limit_select(#select{ is_reverse = false} = S, Key) ->
+  S#select{ gte = nil, gt  = Key }
+  ;
+limit_select(#select{ is_reverse = true } = S, Key) ->
+  S#select{ lte = nil, lt  = Key }.
 
 %% These key selectors are used to find the borders of the range Low, High
 %% Than all keys Low =< Key < High are returned
