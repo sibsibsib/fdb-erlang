@@ -320,7 +320,9 @@ transact(_,_) ->
   ?THROW_FDB_ERROR(invalid_fdb_handle).
 
 attempt_transaction(DbHandle, DoStuff) ->
-  ApplySelf = fun() -> attempt_transaction(DbHandle, DoStuff) end,
+  ApplySelf = fun() ->
+    handle_transaction_attempt(attempt_transaction(DbHandle, DoStuff))
+  end,
   maybe_do([
   fun() -> fdb_nif:fdb_database_create_transaction(DbHandle) end,
   fun(Tx) ->
