@@ -1,7 +1,6 @@
 -module(fdb_raw).
 
--export([ api_version/1
-        , clear/2
+-export([ clear/2
         , clear_range/3
         , get/2
         , get_range/2
@@ -10,8 +9,6 @@
         , init/1
         , init_and_open/0
         , init_and_open/1
-        , init_and_open_try_5_times/0
-        , init_and_open_try_5_times/1
         , maybe_do/1
         , next/2
         , open/0
@@ -49,26 +46,16 @@ previous(Handle, Key) ->
     [{K, V}] -> {ok, {K, V}}
   end.
 
-maybe_do(Fs) ->
-  Wrapped = lists:map(fun wrap_fdb_result_fun/1, Fs),
-  maybe:do(Wrapped).
-
-wrap_fdb_result_fun(F) ->
-  case erlang:fun_info(F, arity) of
-   {arity, 0} -> fun( ) -> handle_fdb_result(F()) end;
-   {arity, 1} -> fun(X) -> handle_fdb_result(F(X)) end;
-   _ -> throw({error, unsupported_arity })
-  end.
-
 %% @doc Loads the native FoundationDB library file from a certain location
--spec init(SoFile::list())-> ok | {error, term()}.
+-spec init(Options::list())-> ok | {error, term()}.
 %% @end
 init(Options) ->
-  SoFile = case lists:keysearch(so_file, 1, Options) of
-    {value, {so_file, FilePath}} -> FilePath;
-    false                      -> nif_file()
-  end,
-  fdb_nif:init(SoFile).
+  AllOptions=get_init_options(Options),
+  SoFile = lkup(so_file, AllOptions),
+  Version = lkup(fdb_api_version, AllOptions),
+  InitRes = fdb_nif:init(SoFile),
+  fdb_nif:fdb_select_api_version(Version),
+  InitRes.
 
 %% @doc Loads the native FoundationDB library file from  `priv/fdb_nif.so`
 -spec init()-> ok | {error, term()}.
@@ -76,51 +63,35 @@ init(Options) ->
 init() ->
   init([]).
 
-nif_file() ->
-  PrivDir = case code:priv_dir(?MODULE) of
-              {error, bad_name} ->
-                EbinDir = filename:dirname(code:which(?MODULE)),
-                AppPath = filename:dirname(EbinDir),
-                filename:join(AppPath, "priv");
-              Path ->
-                Path
-            end,
-  filename:join(PrivDir,"fdb_nif").
-
-
-%% @doc Specify the API version we are using
-%%
-%% This function must be called after the init, and before any other function in
-%% this library is called.
--spec api_version(fdb_version()) -> fdb_cmd_result().
-%% @end
-api_version(Version) ->
-  handle_fdb_result(fdb_nif:fdb_select_api_version(Version)).
+maybe_do(Fs) ->
+  Wrapped = lists:map(fun wrap_fdb_result_fun/1, Fs),
+  maybe:do(Wrapped).
 
 %% @doc  Opens the given database
 %%
 %% (or the default database of the cluster indicated by the fdb.cluster file in a
 %% platform-specific location, if no cluster_file or database_name is provided).
 %% Initializes the FDB interface as required.
--spec open() -> fdb_database().
+-spec open() -> fdb_database() | {error, atom()}.
 %% @end
 open() ->
   open([]).
 
 open(Options) ->
+  AllOptions=get_open_options(Options),
   maybe_do(
-    [ fun () -> fdb_nif:fdb_setup_network() end
-    , fun () -> fdb_nif:fdb_run_network() end
+    [ fun () ->   fdb_nif:fdb_setup_network() end
+    , fun () ->   fdb_nif:fdb_run_network() end
     , fun () ->
-        case lists:keysearch(fdb_cluster_cfg, 1, Options) of
-          {value, {fdb_cluster_cfg, FilePath}} -> fdb_nif:fdb_create_cluster(FilePath);
-          false                            -> fdb_nif:fdb_create_cluster()
-        end
+          case lkup(fdb_cluster_cfg, AllOptions) of
+            undefined -> fdb_nif:fdb_create_cluster();
+            FilePath  -> fdb_nif:fdb_create_cluster(FilePath)
+          end
       end
-    , fun (ClF) -> future_get(ClF, cluster) end
-    , fun (ClHandle) -> fdb_nif:fdb_cluster_create_database(ClHandle) end
+    , fun (ClF)       -> future_get(ClF, cluster) end
+    , fun (ClHandle)  -> fdb_nif:fdb_cluster_create_database(ClHandle) end
     , fun (DatabaseF) -> future_get(DatabaseF, database) end
-    , fun (DbHandle) ->
+    , fun (DbHandle)  ->
         %% check, whether database is actually available
         try
           get({db, DbHandle}, <<>>, [{timeout,1000}]),
@@ -131,33 +102,33 @@ open(Options) ->
       end ]).
 
 %% @doc Initializes the driver and returns a database handle
--spec init_and_open() -> fdb_database().
+-spec init_and_open() -> fdb_database() | {error, atom()}.
 %% end
 init_and_open() -> init_and_open([]).
 
 init_and_open(Options) ->
-  init(Options),
-  api_version(100),
-  maybe_do([
-    fun() -> open(Options) end
-  ]).
+  AllOpenOptions=get_open_options(Options),
+  NumRetries=lkup(num_retries, AllOpenOptions),
+  init_and_open_with_retry(AllOpenOptions, NumRetries).
 
-
-init_and_open_try_5_times() -> init_and_open_try_5_times([]).
-
-init_and_open_try_5_times(Options) ->
-  init_and_open_try_5_times(Options, 5).
-
-init_and_open_try_5_times(Options, N) ->
-  case init_and_open(Options) of
-    {ok, DB} -> {ok, DB};
+init_and_open_with_retry(Options, N) ->
+  case do_init_and_open(Options) of
+    DB={db, _} -> {ok, DB};
     Error    -> case N of
-      0 -> Error;
-      _ ->
-        timer:sleep(100),
-        init_and_open_try_5_times(Options, N-1)
-    end
+                  0 -> Error;
+                  _ ->
+                    timer:sleep(100),
+                    init_and_open_with_retry(Options, N-1)
+                end
   end.
+
+do_init_and_open(Options) ->
+  AllInitOptions=get_init_options(Options),
+  AllOpenOptions=get_open_options(Options),
+  maybe_do([
+    fun() -> init(AllInitOptions) end,
+    fun() -> open(AllOpenOptions) end
+  ]).  
 
 get(DB, Key) -> get(DB, Key, []).
 
@@ -167,7 +138,8 @@ get(DB, Key) -> get(DB, Key, []).
 get(DB={db, _Database}, Key, Options) ->
   transact(DB, fun(Tx) -> get(Tx, Key, Options) end);
 get({tx, Tx}, Key, Options) ->
-  Timeout = lkup(timeout, Options, ?FUTURE_TIMEOUT),
+  AllOptions = get_options(Options),
+  Timeout = lkup(timeout, AllOptions),
   maybe_do(
     [ fun()-> fdb_nif:fdb_transaction_get(Tx, Key) end
     , fun(GetF) -> future_get(GetF, value, Timeout) end
@@ -340,6 +312,54 @@ handle_transaction_attempt({{error, Err}, Tx, _Result, ApplySelf}) ->
     fun () -> ApplySelf() end
   ]).
 
+
+wrap_fdb_result_fun(F) ->
+  case erlang:fun_info(F, arity) of
+   {arity, 0} -> fun( ) -> handle_fdb_result(F()) end;
+   {arity, 1} -> fun(X) -> handle_fdb_result(F(X)) end;
+   _ -> throw({error, unsupported_arity })
+  end.
+
+nif_file() ->
+  PrivDir = case code:priv_dir(?MODULE) of
+              {error, bad_name} ->
+                EbinDir = filename:dirname(code:which(?MODULE)),
+                AppPath = filename:dirname(EbinDir),
+                filename:join(AppPath, "priv");
+              Path ->
+                Path
+            end,
+  filename:join(PrivDir,"fdb_nif").
+
+default_get_options() ->
+  [
+   {timeout, 5000}
+  ].
+
+merge_options(OverridingOptions, DefaultOptions) ->
+  lists:ukeymerge(1, lists:ukeysort(1, OverridingOptions), lists:ukeysort(1,DefaultOptions)).
+
+get_options(UserOptions) ->
+  merge_options(UserOptions, default_get_options()).
+
+default_init_options() ->
+  [
+   {fdb_api_version, 100},
+   {so_file, nif_file()}
+  ].
+
+get_init_options(UserOptions) ->
+  merge_options(UserOptions,default_init_options()).
+
+default_open_options() ->
+  [
+   {fdb_cluster_cfg, undefined},
+   {num_retries, 1}
+  ].
+
+get_open_options(UserOptions) ->
+  merge_options(UserOptions,default_open_options()).
+
 handle_fdb_result({0, RetVal}) -> {ok, RetVal};
 handle_fdb_result({error, 2009}) -> ok;
 handle_fdb_result({error, network_already_running}) -> ok;
@@ -378,8 +398,6 @@ wait_non_blocking({false,F}, Timeout) ->
 wait_non_blocking({true,F}, _Timeout) ->
   {ok, F}.
 
-lkup(K, KVs, Default) ->
-  case lists:keysearch(K, 1, KVs) of
-    {value, {K, V}} -> V;
-    false           -> Default
-  end.
+lkup(K, KVs) ->
+  {K, V}=lists:keyfind(K, 1, KVs),
+  V.

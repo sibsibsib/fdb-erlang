@@ -5,7 +5,7 @@
 %% All values are encoded/decoded using term_to_binary/binary_to_term
 
 -export([init/0, init/1]).
--export([api_version/1, open/0]).
+-export([open/0]).
 -export([get/2, get/3, get_range/2, get_range/3, set/3]).
 -export([clear/2, clear_range/3]).
 -export([transact/2]).
@@ -15,23 +15,14 @@
 -include("../include/fdb.hrl").
 
 %% @doc Loads the native FoundationDB library file from a certain location
--spec init(SoFile::list())-> ok | {error, term()}.
+-spec init(Options::list())-> ok | {error, term()}.
 %% @end
-init(SoFile) -> fdb_raw:init(SoFile).
+init(Options) -> fdb_raw:init(Options).
 
 %% @doc Loads the native FoundationDB library file from  `priv/fdb_nif.so`
 -spec init()-> ok | {error, term()}.
 %% @end
 init() -> fdb_raw:init().
-
-%% @doc Specify the API version we are using
-%%
-%% This function must be called after the init, and before any other function in
-%% this library is called.
--spec api_version(fdb_version()) -> fdb_cmd_result().
-%% @end
-api_version(Version) ->
-  fdb_raw:api_version(Version).
 
 %% @doc  Opens the given database 
 %% 
@@ -43,14 +34,14 @@ api_version(Version) ->
 open() -> fdb_raw:open().
 
 %% @doc Initializes the driver and returns a database handle
--spec init_and_open() -> fdb_database().
+-spec init_and_open() -> fdb_database() | {error, atom()}.
 %% end
 init_and_open() -> fdb_raw:init_and_open().
 
 %% @doc Initializes the driver and returns a database handle
--spec init_and_open(SoFile::list()) -> fdb_database().
+-spec init_and_open(Options::list()) -> fdb_database() | {error, atom()}.
 %% end
-init_and_open(SoFile) -> fdb_raw:init_and_open(SoFile).
+init_and_open(Options) -> fdb_raw:init_and_open(Options).
 
 %% @doc Gets a value using a key, falls back to a default value if not found
 -spec get(fdb_handle(), fdb_key(), term()) -> term().

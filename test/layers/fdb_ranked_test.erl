@@ -6,7 +6,7 @@
 -define(SOLIB,"../priv/fdb_nif").
 
 basic_test()->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
+  {ok, DB} = fdb_raw:init_and_open([{so_file,?SOLIB}, {num_retries, 5}]),
   %% clean
   Subspace = fdb_subspace:open(DB,<<"__test">>),
   fdb_subspace:clear_range(Subspace, nil, nil),
@@ -76,7 +76,7 @@ basic_test()->
   ok.
 
 big_test_core(Size, GetNthOpts, GetExpRank)->
-  {ok, DB} = fdb_raw:init_and_open_try_5_times([{so_file,?SOLIB}]),
+  {ok, DB} = fdb_raw:init_and_open([{so_file,?SOLIB}, {num_retries,5}]),
   %% clean
   Subspace = fdb_subspace:open(DB,<<"__test">>),
   fdb_subspace:clear_range(Subspace, nil, nil),
