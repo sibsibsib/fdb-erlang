@@ -29,7 +29,6 @@ Big thanks to [Valery Meleshkin](https://twitter.com/sum3rman) for the tip!
 ```bash
 git clone git@github.com:HappyPancake/fdb-erlang.git
 cd fdb-erlang
-chmod u+x rebar
 ./rebar get-deps compile eunit -v
 ```
 
@@ -51,7 +50,7 @@ ok
 not_found
 5> fdb:set(DB,<<"Hello">>,<<"World">>).
 ok
-6> fdb:get(DB,<<"Hello">>).            
+6> fdb:get(DB,<<"Hello">>).
 <<"World">>
 7> fdb:get(DB,<<"Hello2">>,some_default_value).
 some_default_value
@@ -64,10 +63,10 @@ not_found
 
 If you want to have a transaction, you need to invoke code like this:
 ```erlang
-10> fdb:transact(DB, fun(Tx) ->                         
-10>   fdb:set(Tx,<<"Hello">>,<<"World">>),            
-10>   fdb:set(Tx,<<"xyz">>,<<"abc">>),                
-10>   [fdb:get(Tx,<<"xyz">>)|fdb:get(Tx,<<"Hello">>)]   
+10> fdb:transact(DB, fun(Tx) ->
+10>   fdb:set(Tx,<<"Hello">>,<<"World">>),
+10>   fdb:set(Tx,<<"xyz">>,<<"abc">>),
+10>   [fdb:get(Tx,<<"xyz">>)|fdb:get(Tx,<<"Hello">>)]
 10> end).
 [<<"abc">>|<<"World">>]
 11>
